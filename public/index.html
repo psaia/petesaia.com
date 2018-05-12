@@ -1,15 +1,3 @@
-package hello
-
-import (
-    "fmt"
-    "net/http"
-)
-
-func init() {
-    http.HandleFunc("/", handler)
-}
-
-const content = `
 <!doctype html>
 <html lang="en">
 <head>
@@ -25,8 +13,3 @@ const content = `
 </ul>
 </body>
 </html>
-`
-
-func handler(w http.ResponseWriter, r *http.Request) {
-    fmt.Fprint(w, content)
-}
