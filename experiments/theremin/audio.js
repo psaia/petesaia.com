@@ -9,6 +9,67 @@ const KEY_PITCH = {
   down: 40
 };
 
+const KEY_RECORDER = {
+  record: 77,
+  undo: 85
+};
+
+class AudioTrack {
+  constructor(audio) {
+    this.audio = audio;
+  }
+  loopEndlessly() {
+    this.audio.addEventListener("ended", () => {
+      this.audio.currentTime = 0;
+      this.audio.play();
+    });
+    this.audio.play();
+    return this;
+  }
+  kill() {
+    this.audio.pause();
+  }
+}
+
+class Recorder {
+  constructor() {
+    this.tracks = [];
+    this._currentRecordData = [];
+    this.recording = false;
+    this.mediaRecorder = null;
+
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+      this.mediaRecorder = new MediaRecorder(stream);
+
+      this.mediaRecorder.addEventListener("dataavailable", event => {
+        this._currentRecordData.push(event.data);
+      });
+
+      this.mediaRecorder.addEventListener("stop", () => {
+        const audioBlob = new Blob(this._currentRecordData);
+        const audioUrl = URL.createObjectURL(audioBlob);
+        const audio = new Audio(audioUrl);
+        this.tracks.push(new AudioTrack(audio).loopEndlessly());
+        this._currentRecordData = [];
+      });
+    });
+  }
+  record() {
+    this.mediaRecorder.start();
+    this.recording = true;
+  }
+  save() {
+    this.mediaRecorder.stop();
+    this.recording = false;
+  }
+  removeLast() {
+    if (this.tracks.length) {
+      this.tracks[this.tracks.length - 1].kill();
+      this.tracks.pop();
+    }
+  }
+}
+
 class ImageProcessor {
   constructor() {
     this.canvas = document.createElement("canvas");
@@ -23,12 +84,39 @@ class ImageProcessor {
   }
 }
 
+class VibrationController {
+  constructor(context) {
+    this.context = context;
+    this.oscillator = context.createOscillator();
+    this.gainNode = context.createGain();
+  }
+  start(hz) {
+    this.oscillator.type = "sine";
+    this.oscillator.frequency.value = hz;
+    this.oscillator.connect(this.gainNode);
+    this.gainNode.connect(this.context.destination);
+    this.oscillator.start();
+  }
+  gain(val) {
+    this.gainNode.gain.exponentialRampToValueAtTime(
+      val,
+      this.context.currentTime + 0.04
+    );
+  }
+  hz(hz) {
+    if (hz && !isNaN(hz)) {
+      this.oscillator.frequency.value = hz;
+    }
+  }
+}
+
 class Composer {
-  constructor(iProcessor, vibration) {
+  constructor(iProcessor, vibration, recorder) {
     this.iProcessor = iProcessor;
     this.vibration = vibration;
+    this.recorder = recorder;
     this.note = KEY_NOTES.r;
-    this.pitch = 10;
+    this.pitch = 15;
   }
   setNote(note) {
     this.note = note;
@@ -41,6 +129,16 @@ class Composer {
         this.pitch -= 1;
       }
     }
+  }
+  toggleRecord() {
+    if (this.recorder.recording) {
+      this.recorder.save();
+    } else {
+      this.recorder.record();
+    }
+  }
+  removeLastTrack() {
+    this.recorder.removeLast();
   }
   run() {
     const video = document.getElementById("video");
@@ -115,51 +213,54 @@ class Composer {
   }
 }
 
-class VibrationController {
-  constructor(context) {
-    this.context = context;
-    this.oscillator = context.createOscillator();
-    this.gainNode = context.createGain();
-  }
-  start(hz) {
-    this.oscillator.type = "sine";
-    this.oscillator.frequency.value = hz;
-    this.oscillator.connect(this.gainNode);
-    this.gainNode.connect(this.context.destination);
-    this.oscillator.start();
-  }
-  gain(val) {
-    this.gainNode.gain.exponentialRampToValueAtTime(
-      val,
-      this.context.currentTime + 0.04
-    );
-  }
-  hz(hz) {
-    if (hz && !isNaN(hz)) {
-      this.oscillator.frequency.value = hz;
-    }
-  }
-}
-
 document.addEventListener("DOMContentLoaded", function() {
   const btn = document.getElementById("go");
-  btn.addEventListener("click", function() {
-    btn.style.display = "none";
+  btn.addEventListener(
+    "click",
+    function() {
+      btn.style.display = "none";
 
-    const composer = new Composer(
-      new ImageProcessor(),
-      new VibrationController(new AudioContext())
-    );
+      const composer = new Composer(
+        new ImageProcessor(),
+        new VibrationController(new AudioContext()),
+        new Recorder()
+      );
 
-    composer.run();
+      composer.run();
 
-    document.addEventListener("keydown", function(event) {
-      if (Object.values(KEY_NOTES).indexOf(event.keyCode) !== -1) {
-        composer.setNote(event.keyCode);
-      }
-      if (Object.values(KEY_PITCH).indexOf(event.keyCode) !== -1) {
-        composer.setPitch(event.keyCode);
-      }
-    });
-  });
+      setTimeout(() => {
+        document.addEventListener(
+          "click",
+          function() {
+            console.log("clicked");
+            composer.toggleRecord();
+          },
+          false
+        );
+      }, 100);
+
+      document.addEventListener(
+        "keydown",
+        function(event) {
+          if (Object.values(KEY_NOTES).indexOf(event.keyCode) !== -1) {
+            composer.setNote(event.keyCode);
+          }
+
+          if (Object.values(KEY_PITCH).indexOf(event.keyCode) !== -1) {
+            composer.setPitch(event.keyCode);
+          }
+
+          if (event.keyCode === KEY_RECORDER.record) {
+            composer.toggleRecord();
+          }
+
+          if (event.keyCode === KEY_RECORDER.undo) {
+            composer.removeLastTrack();
+          }
+        },
+        false
+      );
+    },
+    false
+  );
 });

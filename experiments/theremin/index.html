@@ -11,10 +11,12 @@ body,html {
   padding: 0;
   margin: 0;
   display: flex;
+  flex-direction: column;
   height: 100%;
   align-items: center;
   justify-content: center;
   background: yellow;
+  text-align: center;
 }
 canvas {
   position: absolute;
@@ -23,10 +25,20 @@ canvas {
   top: 0;
   bottom: 0;
 }
+button {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  margin: auto;
+  background: transparent;
+  outline: none;
+  border: none;
+  cursor: pointer;
+}
 </style>
 </head>
 <body>
-  <button id="go">Use "r", "g", "b" to change Hz input channels. Use up and down arrows for pitch.</button>
+  <button id="go">Use "r", "g", "b" to change Hz input channels. <br>Use up and down arrows for pitch. <br>Use "m" or mouse-click anywhere to start/stop recording looped audio. <br>Use "u" to remove last recorded track.<br><b>Click to start</b></button>
   <video id="video" autoplay></video>
   <script src="audio.js"></script>
 </body>
