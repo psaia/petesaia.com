@@ -10,7 +10,6 @@ const KEY_PITCH = {
 };
 
 const KEY_RECORDER = {
-  record: 77,
   undo: 85
 };
 
@@ -62,6 +61,12 @@ class Recorder {
     this.mediaRecorder.stop();
     this.recording = false;
   }
+  silence() {
+    this.tracks.forEach(track => track.audio.pause());
+  }
+  unsilence() {
+    this.tracks.forEach(track => track.audio.play());
+  }
   removeLast() {
     if (this.tracks.length) {
       this.tracks[this.tracks.length - 1].kill();
@@ -91,7 +96,7 @@ class VibrationController {
     this.gainNode = context.createGain();
   }
   start(hz) {
-    this.oscillator.type = "sine";
+    this.oscillator.type = "sawtooth";
     this.oscillator.frequency.value = hz;
     this.oscillator.connect(this.gainNode);
     this.gainNode.connect(this.context.destination);
@@ -100,7 +105,7 @@ class VibrationController {
   gain(val) {
     this.gainNode.gain.exponentialRampToValueAtTime(
       val,
-      this.context.currentTime + 0.04
+      this.context.currentTime + 0.000001
     );
   }
   hz(hz) {
@@ -220,10 +225,13 @@ document.addEventListener("DOMContentLoaded", function() {
     function() {
       btn.style.display = "none";
 
+      const vController = new VibrationController(new AudioContext());
+      const recorder = new Recorder();
+
       const composer = new Composer(
         new ImageProcessor(),
-        new VibrationController(new AudioContext()),
-        new Recorder()
+        vController,
+        recorder
       );
 
       composer.run();
@@ -232,7 +240,14 @@ document.addEventListener("DOMContentLoaded", function() {
         document.addEventListener(
           "click",
           function() {
-            console.log("clicked");
+            // Silence all other sounds when recording.
+            if (recorder.recording) {
+              vController.gain(1);
+              recorder.unsilence();
+            } else {
+              vController.gain(0.0001);
+              recorder.silence();
+            }
             composer.toggleRecord();
           },
           false
@@ -248,10 +263,6 @@ document.addEventListener("DOMContentLoaded", function() {
 
           if (Object.values(KEY_PITCH).indexOf(event.keyCode) !== -1) {
             composer.setPitch(event.keyCode);
-          }
-
-          if (event.keyCode === KEY_RECORDER.record) {
-            composer.toggleRecord();
           }
 
           if (event.keyCode === KEY_RECORDER.undo) {
