@@ -1,16 +1,32 @@
-const KEY_NOTES = {
+const keyMap = {
+  left: 37,
+  right: 39,
+  up: 38,
+  down: 40,
   r: 82,
   g: 71,
-  b: 66
+  b: 66,
+  u: 85
+};
+
+const KEY_NOTES = {
+  r: keyMap.r,
+  g: keyMap.g,
+  b: keyMap.b
 };
 
 const KEY_PITCH = {
-  up: 38,
-  down: 40
+  up: keyMap.up,
+  down: keyMap.down
+};
+
+const KEY_GAIN = {
+  up: keyMap.right,
+  down: keyMap.left
 };
 
 const KEY_RECORDER = {
-  undo: 85
+  undo: keyMap.u
 };
 
 class AudioTrack {
@@ -45,16 +61,20 @@ class Recorder {
       });
 
       this.mediaRecorder.addEventListener("stop", () => {
-        const audioBlob = new Blob(this._currentRecordData);
-        const audioUrl = URL.createObjectURL(audioBlob);
-        const audio = new Audio(audioUrl);
-        this.tracks.push(new AudioTrack(audio).loopEndlessly());
+        if (this._currentRecordData.length && this._currentRecordData[0].size) {
+          const audioBlob = new Blob(this._currentRecordData);
+          const audioUrl = URL.createObjectURL(audioBlob);
+          const audio = new Audio(audioUrl);
+          this.tracks.push(new AudioTrack(audio).loopEndlessly());
+        }
         this._currentRecordData = [];
       });
     });
   }
   record() {
-    this.mediaRecorder.start();
+    setTimeout(() => {
+      this.mediaRecorder.start();
+    }, 300);
     this.recording = true;
   }
   save() {
@@ -89,39 +109,77 @@ class ImageProcessor {
   }
 }
 
-class VibrationController {
+class Vibration {
   constructor(context) {
     this.context = context;
     this.oscillator = context.createOscillator();
     this.gainNode = context.createGain();
   }
   start(hz) {
-    this.oscillator.type = "sawtooth";
+    this.oscillator.type = "sine";
     this.oscillator.frequency.value = hz;
     this.oscillator.connect(this.gainNode);
     this.gainNode.connect(this.context.destination);
     this.oscillator.start();
   }
   gain(val) {
-    this.gainNode.gain.exponentialRampToValueAtTime(
-      val,
-      this.context.currentTime + 0.000001
-    );
+    if (!this._silenced) {
+      this.gainNode.gain.exponentialRampToValueAtTime(
+        val,
+        this.context.currentTime + 0.01
+      );
+    }
   }
   hz(hz) {
     if (hz && !isNaN(hz)) {
       this.oscillator.frequency.value = hz;
     }
   }
+  silence() {
+    // this._prevGain = this.gainNode.gain.value;
+    this._silenced = true;
+    this.gainNode.gain.exponentialRampToValueAtTime(
+      0.0000001,
+      this.context.currentTime + 0.01
+    );
+  }
+  unsilence() {
+    this._silenced = false;
+  }
+}
+
+class RecordIndicator {
+  show() {
+    this.el = document.createElement("div");
+    this.el.className = "record-indicator";
+    document.body.appendChild(this.el);
+  }
+  hide() {
+    if (this.el) {
+      document.body.removeChild(this.el);
+      this.el = null;
+    }
+  }
 }
 
 class Composer {
-  constructor(iProcessor, vibration, recorder) {
+  constructor(
+    iProcessor,
+    vibration,
+    recorder,
+    recordIndicator,
+    videoEl,
+    canvasEl
+  ) {
+    this.videoEl = videoEl;
+    this.canvasEl = canvasEl;
     this.iProcessor = iProcessor;
     this.vibration = vibration;
     this.recorder = recorder;
+    this.recordIndicator = recordIndicator;
     this.note = KEY_NOTES.r;
     this.pitch = 15;
+    this.gain = 1;
   }
   setNote(note) {
     this.note = note;
@@ -135,25 +193,39 @@ class Composer {
       }
     }
   }
-  toggleRecord() {
-    if (this.recorder.recording) {
-      this.recorder.save();
+  setGain(gainDirection) {
+    if (KEY_GAIN.up === gainDirection) {
+      if (this.gain < 1) {
+        this.gain += 0.1;
+      }
     } else {
+      if (this.pitch > 0) {
+        this.gain -= 0.1;
+      }
+    }
+  }
+  toggleRecordMode() {
+    if (this.recorder.recording) {
+      this.vibration.unsilence();
+      this.recorder.unsilence();
+      this.recorder.save();
+      this.recordIndicator.hide();
+    } else {
+      this.vibration.silence();
+      this.recorder.silence();
       this.recorder.record();
+      this.recordIndicator.show();
     }
   }
   removeLastTrack() {
     this.recorder.removeLast();
   }
   run() {
-    const video = document.getElementById("video");
-    const canvas = document.createElement("canvas");
-    const context = canvas.getContext("2d");
-
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-
+    const context = this.canvasEl.getContext("2d");
     this.vibration.start(100);
+
+    this.canvasEl.width = window.innerWidth;
+    this.canvasEl.height = window.innerHeight;
 
     navigator.mediaDevices
       .getUserMedia({
@@ -161,16 +233,14 @@ class Composer {
         video: { width: window.innerWidth, height: window.innerHeight }
       })
       .then(stream => {
-        video.style = "display:none";
-        video.srcObject = stream;
+        this.videoEl.style = "display:none";
+        this.videoEl.srcObject = stream;
       })
       .catch(console.error);
 
-    document.body.appendChild(canvas);
-
     const capture = () => {
       const image = this.iProcessor.data(
-        video,
+        this.videoEl,
         window.innerWidth,
         window.innerHeight
       );
@@ -210,6 +280,8 @@ class Composer {
           break;
       }
 
+      this.vibration.gain(this.gain);
+
       context.putImageData(image, 0, 0);
       window.requestAnimationFrame(capture);
     };
@@ -225,13 +297,15 @@ document.addEventListener("DOMContentLoaded", function() {
     function() {
       btn.style.display = "none";
 
-      const vController = new VibrationController(new AudioContext());
       const recorder = new Recorder();
 
       const composer = new Composer(
         new ImageProcessor(),
-        vController,
-        recorder
+        new Vibration(new AudioContext()),
+        recorder,
+        new RecordIndicator(),
+        document.getElementById("video"),
+        document.getElementById("canvas")
       );
 
       composer.run();
@@ -240,15 +314,7 @@ document.addEventListener("DOMContentLoaded", function() {
         document.addEventListener(
           "click",
           function() {
-            // Silence all other sounds when recording.
-            if (recorder.recording) {
-              vController.gain(1);
-              recorder.unsilence();
-            } else {
-              vController.gain(0.0001);
-              recorder.silence();
-            }
-            composer.toggleRecord();
+            composer.toggleRecordMode();
           },
           false
         );
@@ -257,6 +323,10 @@ document.addEventListener("DOMContentLoaded", function() {
       document.addEventListener(
         "keydown",
         function(event) {
+          if (Object.values(KEY_GAIN).indexOf(event.keyCode) !== -1) {
+            composer.setGain(event.keyCode);
+          }
+
           if (Object.values(KEY_NOTES).indexOf(event.keyCode) !== -1) {
             composer.setNote(event.keyCode);
           }
