@@ -99,12 +99,12 @@ class ImageProcessor {
   constructor() {
     this.canvas = document.createElement("canvas");
     this.context = this.canvas.getContext("2d");
+    this.context.globalCompositeOperation = "difference";
   }
   data(video, w, h) {
     this.canvas.width = w;
     this.canvas.height = h;
-    // this.context.globalCompositeOperation = "difference";
-    this.context.clearRect(0, 0, w, h);
+    // this.context.clearRect(0, 0, w, h);
     this.context.drawImage(video, 0, 0, w, h);
     return this.context.getImageData(0, 0, w, h);
   }
@@ -227,6 +227,7 @@ class Composer {
 
     this.canvasEl.width = window.innerWidth;
     this.canvasEl.height = window.innerHeight;
+    context.globalCompositeOperation = "difference";
 
     navigator.mediaDevices
       .getUserMedia({
@@ -284,8 +285,7 @@ class Composer {
       this.vibration.gain(this.gain);
 
       context.putImageData(image, 0, 0);
-      setTimeout(() => capture(), 180);
-      // window.requestAnimationFrame(capture);
+      setTimeout(() => capture(), 185);
     };
 
     capture();
